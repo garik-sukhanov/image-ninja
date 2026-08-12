@@ -1,0 +1,88 @@
+{
+  "name": "image-ninja",
+  "version": "0.1.0",
+  "description": "Local image & SVG editor for macOS",
+  "author": "Igor Sukhanov <igoreksuhanov@gmail.com>",
+  "main": "out/main/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "prepare:model": "node scripts/prepare-model.mjs",
+    "prepare:icon": "node scripts/prepare-icon.mjs",
+    "dist": "electron-vite build && electron-builder --mac --arm64",
+    "dist:arm64": "electron-vite build && electron-builder --mac --arm64",
+    "dist:x64": "electron-vite build && electron-builder --mac --x64"
+  },
+  "dependencies": {
+    "magic-wand-tool": "^1.1.7",
+    "onnxruntime-node": "^1.27.0",
+    "perfect-freehand": "^1.2.3",
+    "polygon-clipping": "^0.15.7",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sharp": "^0.35.3",
+    "svg-path-commander": "^2.3.1",
+    "svgo": "^4.0.2",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "autoprefixer": "^10.4.20",
+    "electron": "^38.8.6",
+    "electron-builder": "^25.0.5",
+    "electron-vite": "^2.3.0",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.8"
+  },
+  "build": {
+    "appId": "com.imageninja.app",
+    "productName": "Image Ninja",
+    "copyright": "Copyright © 2026 Igor Sukhanov",
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/sharp/**/*",
+      "**/node_modules/@img/**/*",
+      "**/node_modules/onnxruntime-node/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "build/vendor/models",
+        "to": "models",
+        "filter": [
+          "**/*.onnx"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.graphics-design",
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "identity": null,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": "arm64"
+        }
+      ]
+    },
+    "dmg": {
+      "title": "${productName} ${version}"
+    }
+  }
+}
