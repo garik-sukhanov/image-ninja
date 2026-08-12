@@ -17,6 +17,8 @@ import {
 import { snapRect, type Guide } from '../../svg/snap';
 import { CONTENT_GROUP_ID } from '../../svg/dom';
 import { Scene } from './SceneRenderer';
+import { ContextMenu, useContextMenu } from '../ContextMenu';
+import { nodeMenuItems } from './nodeActions';
 import { Guides, HANDLES, MarqueeBox, SelectionOverlay, HoverOutline, type HandleId } from './SelectionOverlay';
 import { NodeOverlay, PenPreview } from './NodeOverlay';
 import type { SvgNode } from '../../types';
@@ -32,6 +34,7 @@ type Drag =
   | { kind: 'anchor'; anchor: number; which: 'point' | 'in' | 'out'; startCurves: Curves; toLocal: DOMMatrix; start: Point }
   | { kind: 'draw'; start: Point; current: Point }
   | { kind: 'pencil'; points: [number, number, number][] }
+  | { kind: 'underlay'; start: Point; origin: Point }
   | null;
 
 export function SvgCanvas() {
@@ -65,6 +68,9 @@ export function SvgCanvas() {
   const snapToGrid = useSvgStore((s) => s.snapToGrid);
   const snapToObjects = useSvgStore((s) => s.snapToObjects);
   const transparentBg = useSvgStore((s) => s.transparentBg);
+  const underlay = useSvgStore((s) => s.underlay);
+  const underlayUrl = useSvgStore((s) => s.underlayUrl);
+  const menu = useContextMenu();
 
   const [vx, vy, vw, vh] = canvas.viewBox;
 
@@ -307,6 +313,16 @@ export function SvgCanvas() {
         return;
       }
       if (e.button !== 0) return;
+
+      // An unlocked underlay is draggable; a locked one never sees the pointer.
+      if (target.dataset?.underlay && store.underlay) {
+        dragRef.current = {
+          kind: 'underlay',
+          start: doc,
+          origin: { x: store.underlay.x, y: store.underlay.y },
+        };
+        return;
+      }
 
       // --- Node tool -------------------------------------------------------
       if (store.tool === 'node') {
@@ -579,6 +595,17 @@ export function SvgCanvas() {
           drag.points.push([doc.x, doc.y, e.pressure || 0.5]);
           setFrames((f) => ({ ...f }));
           break;
+
+        case 'underlay': {
+          let dx = doc.x - drag.start.x;
+          let dy = doc.y - drag.start.y;
+          if (e.shiftKey) {
+            if (Math.abs(dx) > Math.abs(dy)) dy = 0;
+            else dx = 0;
+          }
+          store.updateUnderlay({ x: drag.origin.x + dx, y: drag.origin.y + dy });
+          break;
+        }
       }
     },
     [
@@ -787,6 +814,47 @@ export function SvgCanvas() {
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerLeave={() => useSvgStore.getState().setHovered(null)}
+        onContextMenu={(e) => {
+          const store = useSvgStore.getState();
+          const target = e.target as SVGElement;
+          const nid = target.dataset?.nid;
+
+          if (nid) {
+            // Right-clicking outside the selection retargets it first, so the
+            // menu always acts on what the user just pointed at.
+            const parents = buildParentMap(store.nodes);
+            let pick = nid;
+            if (!e.metaKey && !e.ctrlKey) {
+              let p = parents[pick];
+              while (p) { pick = p; p = parents[pick]; }
+            }
+            const ids = store.selection.includes(pick) ? store.selection : [pick];
+            if (!store.selection.includes(pick)) store.select([pick]);
+            menu.open(e, nodeMenuItems(ids));
+            return;
+          }
+
+          menu.open(e, [
+            { label: 'Выделить всё', shortcut: '⌘A', onSelect: () => store.selectAll() },
+            { label: 'Снять выделение', disabled: store.selection.length === 0, onSelect: () => store.clearSelection() },
+            {},
+            { label: 'Вписать в окно', shortcut: '0', onSelect: fitToView },
+            { label: 'Масштаб 100 %', shortcut: '1', onSelect: () => store.setView(1, 0, 0) },
+            ...(store.underlay
+              ? [
+                  {} as never,
+                  {
+                    label: store.underlay.visible ? 'Скрыть подложку' : 'Показать подложку',
+                    onSelect: () => store.updateUnderlay({ visible: !store.underlay!.visible }),
+                  },
+                  {
+                    label: store.underlay.locked ? 'Разблокировать подложку' : 'Заблокировать подложку',
+                    onSelect: () => store.updateUnderlay({ locked: !store.underlay!.locked }),
+                  },
+                ]
+              : []),
+          ]);
+        }}
         onDoubleClick={(e) => {
           const nid = (e.target as SVGElement).dataset?.nid;
           const store = useSvgStore.getState();
@@ -835,6 +903,20 @@ export function SvgCanvas() {
 
         {/* Document content, in doc units */}
         <g transform={`translate(${tx} ${ty}) scale(${zoom})`}>
+          {underlay && underlayUrl && underlay.visible && (
+            <image
+              href={underlayUrl}
+              x={underlay.x}
+              y={underlay.y}
+              width={underlay.width}
+              height={underlay.height}
+              opacity={underlay.opacity}
+              preserveAspectRatio="none"
+              data-underlay="1"
+              pointerEvents={underlay.locked ? 'none' : 'all'}
+              style={{ cursor: underlay.locked ? 'default' : 'move' }}
+            />
+          )}
           <g ref={contentRef} id={CONTENT_GROUP_ID}>
             <Scene order={order} nodes={nodes} defs={defs} interactive={interactive} />
           </g>
@@ -901,6 +983,7 @@ export function SvgCanvas() {
       )}
 
       <ZoomBadge zoom={zoom} onFit={fitToView} />
+      {menu.anchor && <ContextMenu anchor={menu.anchor} onClose={menu.close} />}
     </div>
   );
 }

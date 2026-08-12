@@ -5,6 +5,7 @@ import { RasterToolbar } from './RasterToolbar';
 import { TransformPanel } from './TransformPanel';
 import { AdjustPanel } from './AdjustPanel';
 import { AlphaPanel } from './AlphaPanel';
+import { VectorizePanel } from './VectorizePanel';
 
 export function RasterEditor() {
   const busy = useRasterStore((s) => s.busy);
@@ -46,6 +47,7 @@ export function RasterEditor() {
         <TransformPanel />
         <AlphaPanel />
         <AdjustPanel />
+        <VectorizePanel />
       </div>
     </div>
   );

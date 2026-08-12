@@ -5,6 +5,7 @@ import {
   type SvgCanvas,
   type SvgDocument,
   type SvgNode,
+  type Underlay,
 } from '../types';
 import { nextNodeId, type ParsedSvg } from './parse';
 
@@ -29,7 +30,11 @@ interface Snapshot {
   order: string[];
   nodes: Record<string, SvgNode>;
   selection: string[];
+  underlay: Underlay | null;
 }
+
+/** Where a dragged layer lands, in paint-order terms. */
+export type DropPosition = 'before' | 'after' | 'inside';
 
 const HISTORY_LIMIT = 80;
 
@@ -40,6 +45,10 @@ interface SvgState {
   order: string[];
   nodes: Record<string, SvgNode>;
   sourcePath?: string;
+  /** Reference image behind the artboard; never exported. */
+  underlay: Underlay | null;
+  /** `imgfile://` URL for the underlay, resolved at load time. */
+  underlayUrl: string | null;
 
   selection: string[];
   /** Node whose anchors are being edited by the node tool. */
@@ -98,8 +107,14 @@ interface SvgState {
   insertNodes: (nodes: SvgNode[], topLevel: string[]) => string[];
 
   reorder: (ids: string[], where: 'front' | 'back' | 'forward' | 'backward') => void;
+  moveNodes: (ids: string[], targetId: string | null, position: DropPosition) => boolean;
   group: (ids: string[]) => string | null;
   ungroup: (ids: string[]) => void;
+
+  setUnderlay: (underlay: Underlay | null, url: string | null) => void;
+  updateUnderlay: (patch: Partial<Underlay>) => void;
+  /** Inserts a parsed SVG as one group; returns the new group's id. */
+  insertParsed: (parsed: ParsedSvg, transform: string | null, name: string) => string;
 
   replaceColor: (from: string, to: string) => number;
 
@@ -115,6 +130,7 @@ function snapshot(s: SvgState): Snapshot {
     order: [...s.order],
     nodes: { ...s.nodes },
     selection: [...s.selection],
+    underlay: s.underlay,
   };
 }
 
@@ -170,6 +186,8 @@ export const useSvgStore = create<SvgState>((set, get) => ({
   defs: '',
   order: [],
   nodes: {},
+  underlay: null,
+  underlayUrl: null,
 
   selection: [],
   editing: null,
@@ -202,6 +220,8 @@ export const useSvgStore = create<SvgState>((set, get) => ({
       order: doc.order,
       nodes: doc.nodes,
       sourcePath: doc.sourcePath,
+      underlay: doc.underlay ?? null,
+      underlayUrl: null,
       exportSettings: { ...DEFAULT_EXPORT, ...doc.exportSettings },
       zoom: doc.ui.zoom || 1,
       panX: doc.ui.panX,
@@ -232,6 +252,7 @@ export const useSvgStore = create<SvgState>((set, get) => ({
     set({
       canvas: EMPTY_CANVAS, rootAttrs: {}, defs: '', order: [], nodes: {},
       selection: [], editing: null, selectedAnchors: [], past: [], future: [],
+      underlay: null, underlayUrl: null,
     }),
 
   setTool: (tool) =>
@@ -454,6 +475,148 @@ export const useSvgStore = create<SvgState>((set, get) => ({
     });
   },
 
+  /**
+   * Drag-and-drop reordering. `position` is expressed in **paint order**, so
+   * 'after' means "later in the file", i.e. drawn on top. The layers panel
+   * shows the list reversed and flips this itself.
+   *
+   * Returns false when the move is impossible (dropping a group into its own
+   * descendant), so the caller can skip the transform compensation.
+   */
+  moveNodes: (ids, targetId, position) => {
+    const s = get();
+    const moving = ids.filter((id) => s.nodes[id]);
+    if (moving.length === 0) return false;
+
+    // A node can't become its own descendant.
+    if (targetId) {
+      const insideMoving = new Set(moving.flatMap((id) => collectSubtree(id, s.nodes)));
+      if (insideMoving.has(targetId)) return false;
+    }
+    if (position === 'inside' && targetId && !s.nodes[targetId]?.children) return false;
+
+    get().pushHistory();
+    set((state) => {
+      const nodes = { ...state.nodes };
+      const doomed = new Set(moving);
+
+      // Keep the dragged nodes in their existing relative paint order.
+      const flat = flattenOrder(state.order, state.nodes);
+      const ordered = [...moving].sort((a, b) => flat.indexOf(a) - flat.indexOf(b));
+
+      // Detach.
+      let order = state.order.filter((id) => !doomed.has(id));
+      for (const node of Object.values(nodes)) {
+        if (!node.children) continue;
+        const kept = node.children.filter((c) => !doomed.has(c));
+        if (kept.length !== node.children.length) nodes[node.id] = { ...node, children: kept };
+      }
+
+      // Resolve the destination *after* detaching, so indices already account
+      // for the gap the dragged nodes left behind.
+      let containerId: string | null = null;
+      let index: number;
+
+      if (position === 'inside' && targetId) {
+        containerId = targetId;
+        index = (nodes[targetId].children ?? []).length;
+      } else if (targetId) {
+        const parents = buildParentMap(nodes);
+        containerId = parents[targetId] ?? null;
+        const list = containerId ? (nodes[containerId].children ?? []) : order;
+        const at = list.indexOf(targetId);
+        index = at < 0 ? list.length : position === 'after' ? at + 1 : at;
+      } else {
+        index = order.length;
+      }
+
+      if (containerId) {
+        const list = [...(nodes[containerId].children ?? [])];
+        list.splice(index, 0, ...ordered);
+        nodes[containerId] = { ...nodes[containerId], children: list };
+      } else {
+        order = [...order.slice(0, index), ...ordered, ...order.slice(index)];
+      }
+
+      return { nodes, order, selection: ordered };
+    });
+    return true;
+  },
+
+  setUnderlay: (underlay, url) => {
+    get().pushHistory();
+    set({ underlay, underlayUrl: url });
+  },
+
+  updateUnderlay: (patch) =>
+    set((s) => (s.underlay ? { underlay: { ...s.underlay, ...patch } } : {})),
+
+  /**
+   * Drops a parsed SVG in as a single group. Incoming `id` attributes are
+   * renamed when they would collide with ids already in the document —
+   * otherwise a traced or pasted graphic could silently hijack an existing
+   * gradient or clip-path reference.
+   */
+  insertParsed: (parsed, transform, name) => {
+    get().pushHistory();
+    const groupId = nextNodeId();
+
+    set((s) => {
+      const existingIds = new Set<string>();
+      for (const node of Object.values(s.nodes)) {
+        if (node.attrs.id) existingIds.add(node.attrs.id);
+      }
+      for (const m of s.defs.matchAll(/\bid="([^"]+)"/g)) existingIds.add(m[1]);
+
+      const renames = new Map<string, string>();
+      for (const node of Object.values(parsed.nodes)) {
+        const id = node.attrs.id;
+        if (id && existingIds.has(id)) renames.set(id, `${id}-${groupId.slice(0, 5)}`);
+      }
+      for (const m of parsed.defs.matchAll(/\bid="([^"]+)"/g)) {
+        if (existingIds.has(m[1])) renames.set(m[1], `${m[1]}-${groupId.slice(0, 5)}`);
+      }
+
+      const rewrite = (value: string): string => {
+        let out = value;
+        for (const [from, to] of renames) {
+          out = out
+            .replaceAll(`url(#${from})`, `url(#${to})`)
+            .replaceAll(`href="#${from}"`, `href="#${to}"`)
+            .replaceAll(`id="${from}"`, `id="${to}"`);
+        }
+        return out;
+      };
+
+      const nodes = { ...s.nodes };
+      for (const node of Object.values(parsed.nodes)) {
+        const attrs = { ...node.attrs };
+        if (renames.size > 0) {
+          if (attrs.id && renames.has(attrs.id)) attrs.id = renames.get(attrs.id)!;
+          for (const [key, value] of Object.entries(attrs)) {
+            if (value.includes('url(#') || value.startsWith('#')) attrs[key] = rewrite(value);
+          }
+        }
+        nodes[node.id] = { ...node, attrs };
+      }
+
+      nodes[groupId] = {
+        id: groupId,
+        tag: 'g',
+        attrs: transform ? { transform } : {},
+        children: parsed.order,
+        name,
+      };
+
+      const incomingDefs = renames.size > 0 ? rewrite(parsed.defs) : parsed.defs;
+      const defs = [s.defs, incomingDefs].filter((d) => d.trim()).join('\n');
+
+      return { nodes, defs, order: [...s.order, groupId], selection: [groupId] };
+    });
+
+    return groupId;
+  },
+
   group: (ids) => {
     if (ids.length < 2) return null;
     get().pushHistory();
@@ -608,6 +771,7 @@ export const useSvgStore = create<SvgState>((set, get) => ({
       nodes: prev.nodes,
       selection: prev.selection.filter((id) => prev.nodes[id]),
       selectedAnchors: [],
+      underlay: prev.underlay,
     });
   },
 
@@ -624,6 +788,7 @@ export const useSvgStore = create<SvgState>((set, get) => ({
       nodes: next.nodes,
       selection: next.selection.filter((id) => next.nodes[id]),
       selectedAnchors: [],
+      underlay: next.underlay,
     });
   },
 }));

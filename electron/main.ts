@@ -8,6 +8,7 @@ import { registerImageHandlers } from './ipc/image.js';
 import { registerSvgHandlers } from './ipc/svg.js';
 import { registerProjectHandlers } from './ipc/projects.js';
 import { registerSegmentHandlers } from './ipc/segment.js';
+import { registerVectorHandlers } from './ipc/vector.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -114,6 +115,7 @@ app.whenReady().then(() => {
   registerSvgHandlers(ipcMain);
   registerProjectHandlers(ipcMain);
   registerSegmentHandlers(ipcMain, () => mainWindow);
+  registerVectorHandlers(ipcMain);
   createWindow();
 
   app.on('activate', () => {
@@ -157,6 +159,20 @@ function registerIpc() {
       ],
     });
     return result.canceled ? [] : result.filePaths;
+  });
+
+  ipcMain.handle('dialog:pickImage', async (_e, title: string) => {
+    if (!mainWindow) return null;
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title,
+      properties: ['openFile'],
+      filters: [
+        { name: 'Изображения', extensions: IMAGE_EXTENSIONS },
+        { name: 'Все файлы', extensions: ['*'] },
+      ],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0];
   });
 
   ipcMain.handle('dialog:relinkImage', async (_e, fileName: string) => {

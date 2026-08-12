@@ -6,12 +6,15 @@ import type {
   ProjectDocument,
   ProjectMeta,
   SegmentResult,
+  TraceOptions,
+  TraceResult,
 } from './types';
 
 declare global {
   interface Window {
     inj: {
       openImagesDialog: () => Promise<string[]>;
+      pickImageDialog: (title: string) => Promise<string | null>;
       relinkImageDialog: (fileName: string) => Promise<string | null>;
       saveFileDialog: (defaultName: string, ext: string) => Promise<string | null>;
       pathExists: (filePath: string) => Promise<boolean>;
@@ -39,6 +42,15 @@ declare global {
         remove: (id: string) => Promise<boolean>;
         run: (id: string, width: number, height: number, rgba: Uint8Array) => Promise<SegmentResult>;
         onDownloadProgress: (cb: (p: DownloadProgress) => void) => () => void;
+      };
+
+      vector: {
+        trace: (
+          width: number,
+          height: number,
+          rgba: Uint8Array,
+          opts: TraceOptions,
+        ) => Promise<TraceResult>;
       };
 
       projects: {

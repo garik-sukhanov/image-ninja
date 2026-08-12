@@ -4,6 +4,7 @@ import { SvgToolbar } from './SvgToolbar';
 import { LayersPanel } from './LayersPanel';
 import { InspectorPanel } from './InspectorPanel';
 import { PalettePanel } from './PalettePanel';
+import { UnderlayPanel } from './UnderlayPanel';
 import { CodePanel } from './CodePanel';
 import { Icon } from '../Icons';
 
@@ -42,6 +43,7 @@ export function SvgEditor() {
       <div className="w-72 border-l border-border bg-panel-2 overflow-y-auto shrink-0">
         <InspectorPanel />
         <PalettePanel />
+        <UnderlayPanel />
       </div>
     </div>
   );

@@ -174,6 +174,27 @@ export interface SvgCanvas {
   viewBox: [number, number, number, number];
 }
 
+/**
+ * A reference image shown *behind* the artboard for tracing over. It is not
+ * part of the scene graph and never reaches the exported file.
+ */
+export interface Underlay {
+  filePath: string;
+  fileName: string;
+  /** Placement in document units. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Intrinsic pixel size, kept so "1:1" and tracing know the real resolution. */
+  naturalWidth: number;
+  naturalHeight: number;
+  opacity: number;
+  visible: boolean;
+  /** Locked underlays ignore the pointer, so drawing over them stays natural. */
+  locked: boolean;
+}
+
 export interface SvgDocument {
   schemaVersion: number;
   kind: 'svg';
@@ -182,6 +203,7 @@ export interface SvgDocument {
   createdAt: string;
   updatedAt: string;
   canvas: SvgCanvas;
+  underlay?: Underlay | null;
   /** Attributes of the root <svg>, minus width/height/viewBox. */
   rootAttrs: Record<string, string>;
   /** Raw inner markup of <defs> — gradients, filters, clip paths, fonts. */
@@ -235,6 +257,58 @@ export interface ModelStatus {
   name: string;
   sizeMb: number;
   path: string;
+}
+
+// ---------------------------------------------------------------------------
+// Vectorisation (VTracer)
+// ---------------------------------------------------------------------------
+
+export interface TraceOptions {
+  /** Colour clustering, or a single black-and-white silhouette. */
+  mode: 'color' | 'bw';
+  /** Stack traced layers, or cut each one out of the one below. */
+  hierarchical: 'stacked' | 'cutout';
+  /** Curve fitting: splines are smooth, polygons are literal. */
+  curve: 'spline' | 'polygon' | 'none';
+  /** Discard blobs smaller than this many pixels. */
+  filterSpeckle: number;
+  /** Significant bits per RGB channel — higher keeps more distinct colours. */
+  colorPrecision: number;
+  /** Colour distance between layers — higher merges more. */
+  layerDifference: number;
+  /** Angle (deg) below which a joint counts as a corner. */
+  cornerThreshold: number;
+  /** Subdivide until every segment is shorter than this. */
+  lengthThreshold: number;
+  /** Angle (deg) below which a spline gets spliced. */
+  spliceThreshold: number;
+  /**
+   * Drop the bottom-most traced shape when it covers almost the whole frame.
+   * Tracing a logo on a white sheet otherwise hands you an opaque white
+   * rectangle under the artwork. Applied after tracing, in the renderer.
+   */
+  dropBackground: boolean;
+}
+
+export const DEFAULT_TRACE: TraceOptions = {
+  mode: 'color',
+  hierarchical: 'stacked',
+  curve: 'spline',
+  filterSpeckle: 4,
+  colorPrecision: 6,
+  layerDifference: 16,
+  cornerThreshold: 60,
+  lengthThreshold: 4,
+  spliceThreshold: 45,
+  dropBackground: true,
+};
+
+export interface TraceResult {
+  svg: string;
+  width: number;
+  height: number;
+  pathCount: number;
+  ms: number;
 }
 
 export interface DownloadProgress {

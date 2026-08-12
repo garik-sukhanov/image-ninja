@@ -86,6 +86,7 @@ export function buildDocument(): ProjectDocument | null {
       order: s.order,
       nodes: s.nodes,
       sourcePath: s.sourcePath,
+      underlay: s.underlay,
       exportSettings: s.exportSettings,
       ui: { zoom: s.zoom, panX: s.panX, panY: s.panY },
     };
@@ -190,7 +191,7 @@ function rasterSignature(s: ReturnType<typeof useRasterStore.getState>) {
 }
 
 function svgSignature(s: ReturnType<typeof useSvgStore.getState>) {
-  return [s.nodes, s.order, s.defs, s.canvas, s.exportSettings];
+  return [s.nodes, s.order, s.defs, s.canvas, s.exportSettings, s.underlay];
 }
 
 export function startAutosave(kind: 'raster' | 'svg') {
@@ -261,9 +262,29 @@ async function loadRasterInto(doc: RasterDocument): Promise<void> {
   if (mask) syncMaskCanvas(mask, orientedW, orientedH);
 }
 
+/** Resolves the underlay's on-disk path into a URL the renderer can display. */
+async function resolveUnderlay(doc: SvgDocument): Promise<void> {
+  const underlay = doc.underlay;
+  if (!underlay) return;
+  try {
+    if (!(await window.inj.pathExists(underlay.filePath))) {
+      // The reference image moved; keep the placement but show nothing rather
+      // than failing the whole project open.
+      useSvgStore.setState({ underlayUrl: null });
+      useAppStore.getState().showToast(`Подложка не найдена: ${underlay.fileName}`, 'error');
+      return;
+    }
+    const { url } = await window.inj.image.prepare(underlay.filePath);
+    useSvgStore.setState({ underlayUrl: url });
+  } catch {
+    useSvgStore.setState({ underlayUrl: null });
+  }
+}
+
 async function afterOpen(doc: ProjectDocument) {
   if (doc.kind === 'svg') {
     useSvgStore.getState().loadDocument(doc);
+    void resolveUnderlay(doc);
   } else {
     await loadRasterInto(doc);
   }

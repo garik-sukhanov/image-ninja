@@ -7,10 +7,14 @@ import type {
   ProjectDocument,
   ProjectMeta,
   SegmentResult,
+  TraceOptions,
+  TraceResult,
 } from '../src/types.js';
 
 const api = {
   openImagesDialog: (): Promise<string[]> => ipcRenderer.invoke('dialog:openImages'),
+  pickImageDialog: (title: string): Promise<string | null> =>
+    ipcRenderer.invoke('dialog:pickImage', title),
   relinkImageDialog: (fileName: string): Promise<string | null> =>
     ipcRenderer.invoke('dialog:relinkImage', fileName),
   saveFileDialog: (defaultName: string, ext: string): Promise<string | null> =>
@@ -52,6 +56,15 @@ const api = {
       ipcRenderer.on('segment:downloadProgress', listener);
       return () => ipcRenderer.removeListener('segment:downloadProgress', listener);
     },
+  },
+
+  vector: {
+    trace: (
+      width: number,
+      height: number,
+      rgba: Uint8Array,
+      opts: TraceOptions,
+    ): Promise<TraceResult> => ipcRenderer.invoke('vector:trace', width, height, rgba, opts),
   },
 
   projects: {

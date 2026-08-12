@@ -30,6 +30,34 @@ export function applyCanvasMatrix(
   return matrixToString(next);
 }
 
+/**
+ * The `transform` a node needs so it stays visually put after being moved into
+ * a different group.
+ *
+ * Both matrices are read *before* the reparent, which is fine because the new
+ * parent isn't the thing moving:
+ *
+ *     transform' = parentNew⁻¹ · (parentOld · transform)
+ *
+ * Returns null when nothing needs to change.
+ */
+export function reparentTransform(
+  reference: SVGGraphicsElement,
+  nodeId: string,
+  newParentId: string | null,
+): string | null {
+  const el = findElement(reference, nodeId);
+  if (!el) return null;
+
+  const canvasMatrix = localToCanvasMatrix(reference, el);
+  const newParentEl = newParentId ? findElement(reference, newParentId) : reference;
+  if (!newParentEl) return null;
+
+  const newParentMatrix = localToCanvasMatrix(reference, newParentEl);
+  const next = DOMMatrix.fromMatrix(newParentMatrix).invertSelf().multiplySelf(canvasMatrix);
+  return matrixToString(next);
+}
+
 /** Translation in canvas units. */
 export function translationMatrix(dx: number, dy: number): DOMMatrix {
   return new DOMMatrix([1, 0, 0, 1, dx, dy]);
