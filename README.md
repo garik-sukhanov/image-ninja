@@ -3,6 +3,32 @@
 Локальный редактор изображений и SVG для macOS на Electron + React + TypeScript.
 Всё считается на машине: ни одно изображение никуда не отправляется.
 
+![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon%20%2B%20Intel-000000?logo=apple&logoColor=white)
+![Electron 38](https://img.shields.io/badge/Electron-38-47848F?logo=electron&logoColor=white)
+![React 18](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![Офлайн](https://img.shields.io/badge/работает-офлайн-brightgreen)
+![License: MIT](https://img.shields.io/badge/license-MIT-blue)
+
+**Растр:** обрезка, цветокоррекция, удаление фона (волшебная палочка, кисть,
+нейросеть офлайн), экспорт в PNG / JPEG / WEBP / AVIF / TIFF.
+**SVG:** редактор, где источник истины — сам файл, поэтому он не теряет
+`clipPath`, `filter`, `<style>` и вложенные группы; слои, узлы, булевы
+операции, автовекторизация растра.
+
+## Быстрый старт
+
+Нужны macOS и Node.js 20.9 или новее.
+
+```bash
+git clone https://github.com/garik-sukhanov/image-ninja.git
+cd image-ninja
+npm install
+npm run dev
+```
+
+Подробности по командам и сборке `.app` / `.dmg` — в разделе «Команды» ниже.
+
 ## Стек
 
 - **Electron 38** + **electron-vite** — main / preload / renderer
@@ -218,3 +244,8 @@ npm run typecheck
   остаётся масштабируемым.
 - Подложка хранится ссылкой на файл, а не копией. Если файл переехать —
   проект откроется, но подложка будет пустой, о чём приложение скажет.
+
+## Лицензия
+
+[MIT](LICENSE). Модели для удаления фона (U²-Net, IS-Net) и сторонние
+библиотеки распространяются под собственными лицензиями.

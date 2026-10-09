@@ -2,7 +2,8 @@
   "name": "image-ninja",
   "version": "0.1.0",
   "description": "Local image & SVG editor for macOS",
-  "author": "Igor Sukhanov <igoreksuhanov@gmail.com>",
+  "author": "Garik Sukhanov",
+  "license": "MIT",
   "main": "out/main/main.js",
   "type": "module",
   "scripts": {
